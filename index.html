@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Potencial Salón Pro — Multi-Servicio & Rentabilidad Neta</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #2dd4bf;
+      --text: #f1f5f9;
+      --border: #334155;
+      --danger: #fb7185;
+    }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 20px; line-height: 1.4; }
+    .grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 20px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    h1, h2, h3 { color: var(--accent); margin-top: 0; }
+    .form-group { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    .field { display: flex; flex-direction: column; }
+    label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 600; }
+    input, select { background: #0f172a; border: 1px solid var(--border); color: white; padding: 8px; border-radius: 6px; }
+    
+    /* Estilos de Servicios */
+    .servicio-box { border-left: 4px solid var(--accent); background: #26334d; padding: 15px; border-radius: 8px; margin-bottom: 15px; position: relative; }
+    .btn-del-svc { position: absolute; top: 10px; right: 10px; background: var(--danger); border: none; color: white; cursor: pointer; border-radius: 4px; padding: 4px 8px; font-size: 11px; }
+    .table-kit { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    .table-kit th { text-align: left; color: #94a3b8; padding-bottom: 5px; }
+    .table-kit input { width: 90%; font-size: 12px; }
+
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi { background: #0f172a; padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+    .kpi-val { font-size: 20px; font-weight: bold; display: block; color: var(--accent); }
+    .btn-add { background: var(--accent); color: #0f172a; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    
+    .status-pill { padding: 4px 8px; border-radius: 99px; font-size: 11px; font-weight: bold; }
+    .ok { background: #14532d; color: #4ade80; }
+    .warn { background: #78350f; color: #fbbf24; }
+
+    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } .form-group { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+
+<h1>Potencial Salón: Simulador Multi-Servicio</h1>
+
+<div class="grid">
+  <div class="left-col">
+    <div class="card">
+      <h2>1. Configuración de Operación</h2>
+      <div class="form-group">
+        <div class="field"><label>Semanas/Año</label><input type="number" id="weeksYear" value="48"></div>
+        <div class="field"><label>Puestos Operativos</label><input type="number" id="puestos" value="2"></div>
+        <div class="field"><label>Servicios/Día/Puesto</label><input type="number" id="servDia" value="3" step="0.1"></div>
+        <div class="field"><label>Días/Semana</label><input type="number" id="daysWeek" value="5"></div>
+        <div class="field"><label>Cotización USD</label><input type="number" id="tc" value="38"></div>
+        <div class="field"><label>IVA Ventas (%)</label><input type="number" id="iva" value="22"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content: space-between; align-items: center;">
+        <h2>2. Mix de Servicios y Kits</h2>
+        <button class="btn-add" onclick="addServicio()">+ Agregar Servicio</button>
+      </div>
+      <div id="serviciosContainer"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Gastos Fijos y Laborales</h2>
+      <div class="form-group">
+        <div class="field"><label>Alquiler + Gastos (Mensual)</label><input type="number" id="gastosFijos" value="35000"></div>
+        <div class="field"><label>Sueldo FTE (Prom. Mensual)</label><input type="number" id="sueldoFte" value="40000"></div>
+        <div class="field"><label>Cantidad Estilistas (FTE)</label><input type="number" id="fteCount" value="2"></div>
+        <div class="field"><label>% Comisiones Tarjeta</label><input type="number" id="comisionTarj" value="4"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="card" style="position: sticky; top: 20px;">
+      <h2>Resultados Anuales</h2>
+      <div id="diagnostico" style="margin-bottom:15px;"></div>
+      
+      <div class="kpi-grid">
+        <div class="kpi"><label>Facturación Bruta (UYU)</label><span class="kpi-val" id="resFactBruta">—</span></div>
+        <div class="kpi"><label>Facturación Neta (Sin IVA)</label><span class="kpi-val" id="resFactNeta">—</span></div>
+        <div class="kpi"><label>Costo Insumos (UYU)</label><span class="kpi-val" id="resCostoInsumos">—</span></div>
+        <div class="kpi"><label>Margen Bruto (UYU)</label><span class="kpi-val" id="resMargenBruto">—</span></div>
+        <div class="kpi"><label>Gastos Fijos + Laboral</label><span class="kpi-val" id="resGastosTotales">—</span></div>
+        <div class="kpi" style="background: #1e3a8a;"><label>RESULTADO FINAL (UYU)</label><span class="kpi-val" id="resFinal">—</span></div>
+      </div>
+
+      <hr style="border:0; border-top:1px solid var(--border); margin:20px 0;">
+      
+      <h3>Eficiencia</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><label>ROS (Sobre Neto)</label><span class="kpi-val" id="resROS">—</span></div>
+        <div class="kpi"><label>Punto Equilibrio (Serv/Mes)</label><span class="kpi-val" id="resBreakeven">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let servicios = [
+  {
+    id: Date.now(),
+    nombre: "Color Global",
+    peso: 70,
+    ticket: 2500,
+    productos: [
+      { nombre: "Tintura (60g)", pack: 60, price: 580, used: 30 },
+      { nombre: "Oxidante (1L)", pack: 1000, price: 1100, used: 60 }
+    ]
+  }
+];
+
+function addServicio() {
+  servicios.push({
+    id: Date.now(),
+    nombre: "Nuevo Servicio",
+    peso: 10,
+    ticket: 2000,
+    productos: [{ nombre: "Producto", pack: 100, price: 500, used: 10 }]
+  });
+  renderServicios();
+}
+
+function removeServicio(id) {
+  servicios = servicios.filter(s => s.id !== id);
+  renderServicios();
+}
+
+function updateServicio(id, field, value) {
+  const s = servicios.find(s => s.id === id);
+  if(field === 'nombre') s.nombre = value;
+  else s[field] = parseFloat(value) || 0;
+  calculate();
+}
+
+function updateProducto(sId, pIdx, field, value) {
+  const s = servicios.find(s => s.id === sId);
+  const p = s.productos[pIdx];
+  if(field === 'nombre') p.nombre = value;
+  else p[field] = parseFloat(value) || 0;
+  calculate();
+}
+
+function addProducto(sId) {
+  const s = servicios.find(s => s.id === sId);
+  s.productos.push({ nombre: "Nuevo", pack: 100, price: 0, used: 0 });
+  renderServicios();
+}
+
+function renderServicios() {
+  const container = document.getElementById('serviciosContainer');
+  container.innerHTML = '';
+  
+  servicios.forEach(s => {
+    const box = document.createElement('div');
+    box.className = 'servicio-box';
+    box.innerHTML = `
+      <button class="btn-del-svc" onclick="removeServicio(${s.id})">Eliminar</button>
+      <div class="form-group">
+        <div class="field"><label>Nombre</label><input type="text" value="${s.nombre}" oninput="updateServicio(${s.id}, 'nombre', this.value)"></div>
+        <div class="field"><label>% de Mix (Frecuencia)</label><input type="number" value="${s.peso}" oninput="updateServicio(${s.id}, 'peso', this.value)"></div>
+        <div class="field"><label>Ticket Bruto (UYU)</label><input type="number" value="${s.ticket}" oninput="updateServicio(${s.id}, 'ticket', this.value)"></div>
+      </div>
+      <table class="table-kit">
+        <thead><tr><th>Insumo</th><th>Envase (g/ml)</th><th>Precio ($)</th><th>Uso (g/ml)</th><th>Costo</th></tr></thead>
+        <tbody>
+          ${s.productos.map((p, i) => {
+            const costo = p.pack > 0 ? (p.price * (p.used / p.pack)) : 0;
+            return `
+            <tr>
+              <td><input type="text" value="${p.nombre}" oninput="updateProducto(${s.id}, ${i}, 'nombre', this.value)"></td>
+              <td><input type="number" value="${p.pack}" oninput="updateProducto(${s.id}, ${i}, 'pack', this.value)"></td>
+              <td><input type="number" value="${p.price}" oninput="updateProducto(${s.id}, ${i}, 'price', this.value)"></td>
+              <td><input type="number" value="${p.used}" oninput="updateProducto(${s.id}, ${i}, 'used', this.value)"></td>
+              <td>$${costo.toFixed(0)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <button class="btn-add" style="padding: 5px 10px; font-size: 11px;" onclick="addProducto(${s.id})">+ Insumo</button>
+    `;
+    container.appendChild(box);
+  });
+  calculate();
+}
+
+function calculate() {
+  const weeks = parseFloat(document.getElementById('weeksYear').value) || 0;
+  const puestos = parseFloat(document.getElementById('puestos').value) || 0;
+  const servDia = parseFloat(document.getElementById('servDia').value) || 0;
+  const daysWeek = parseFloat(document.getElementById('daysWeek').value) || 0;
+  const tc = parseFloat(document.getElementById('tc').value) || 1;
+  const iva = parseFloat(document.getElementById('iva').value) || 0;
+  const gFijos = parseFloat(document.getElementById('gastosFijos').value) || 0;
+  const sueldo = parseFloat(document.getElementById('sueldoFte').value) || 0;
+  const ftes = parseFloat(document.getElementById('fteCount').value) || 0;
+  const comision = parseFloat(document.getElementById('comisionTarj').value) || 0;
+
+  const servAnualesTotales = weeks * daysWeek * puestos * servDia;
+  
+  let factBrutaTotal = 0;
+  let costoInsumosTotal = 0;
+  let pesoTotal = 0;
+
+  servicios.forEach(s => {
+    const cantAnual = servAnualesTotales * (s.peso / 100);
+    const costoInsumoUnit = s.productos.reduce((acc, p) => acc + (p.pack > 0 ? p.price * (p.used / p.pack) : 0), 0);
+    
+    factBrutaTotal += cantAnual * s.ticket;
+    costoInsumosTotal += cantAnual * costoInsumoUnit;
+    pesoTotal += s.peso;
+  });
+
+  const factNetaTotal = factBrutaTotal / (1 + (iva / 100));
+  const costoComisiones = factNetaTotal * (comision / 100);
+  const margenBrutoAnual = factNetaTotal - costoInsumosTotal - costoComisiones;
+  const gastosLaboralesAnuales = (sueldo * 13.5 * ftes); // Sueldo + Aguinaldo/SalVaca aprox
+  const gastosFijosAnuales = gFijos * 12;
+  const gastosTotalesAnuales = gastosLaboralesAnuales + gastosFijosAnuales;
+  const resultadoFinal = margenBrutoAnual - gastosTotalesAnuales;
+  
+  const ros = factNetaTotal > 0 ? (resultadoFinal / factNetaTotal) * 100 : 0;
+  
+  // Punto de equilibrio
+  const ticketPromedioNeto = factNetaTotal / (servAnualesTotales || 1);
+  const costoInsumoPromedio = costoInsumosTotal / (servAnualesTotales || 1);
+  const margenContribUnitario = ticketPromedioNeto - costoInsumoPromedio;
+  const beServiciosMes = margenContribUnitario > 0 ? (gFijos + (sueldo * ftes)) / margenContribUnitario : 0;
+
+  // Actualizar UI
+  document.getElementById('resFactBruta').innerText = `$ ${factBrutaTotal.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resFactNeta').innerText = `$ ${factNetaTotal.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resCostoInsumos').innerText = `$ ${costoInsumosTotal.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resMargenBruto').innerText = `$ ${margenBrutoAnual.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resGastosTotales').innerText = `$ ${gastosTotalesAnuales.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resFinal').innerText = `$ ${resultadoFinal.toLocaleString('es-UY', {maximumFractionDigits:0})}`;
+  document.getElementById('resROS').innerText = `${ros.toFixed(1)}%`;
+  document.getElementById('resBreakeven').innerText = `${Math.ceil(beServiciosMes)} serv/mes`;
+
+  const diag = document.getElementById('diagnostico');
+  if(pesoTotal !== 100) {
+    diag.innerHTML = `<span class="status-pill warn">Advertencia: El % de Mix suma ${pesoTotal}%. Debe ser 100%.</span>`;
+  } else {
+    diag.innerHTML = `<span class="status-pill ok">Configuración de Mix correcta (100%)</span>`;
+  }
+}
+
+// Iniciar
+renderServicios();
+document.querySelectorAll('input').forEach(i => i.addEventListener('input', calculate));
+</script>
+</body>
+</html>
