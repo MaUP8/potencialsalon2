@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Potencial Business Pro v4.6 — MASTER UY</title>
+  <title>Potencial Business Pro v4.6 — MASTER UY (G3)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root{
@@ -60,7 +60,9 @@
   <div class="topbar">
     <div>
       <h1>Potencial Business Pro <span style="font-weight:300;opacity:.6;">v4.6</span></h1>
-      <div class="subtle">Objetivo: <b>Potencial de compra por FTE (G3)</b> + rentabilidad del salón + sell-in estimado por insumo.</div>
+      <div class="subtle">
+        Objetivo: <b>Potencial de compra por FTE (G3)</b> + rentabilidad del salón + sell-in estimado por insumo.
+      </div>
     </div>
     <div class="pill" id="modePill">Modo: Coaching + G3</div>
   </div>
@@ -176,6 +178,9 @@
 <script>
 /* =========================
    v4.6 — Estado + Utilidades
+   Incluye: ocupación, mix policy, POS base, feriados, pérdida en chart,
+            persistencia completa, IDs robustos, debounce, export CSV/JSON,
+            y: servicios extra por FTE para llegar al BE.
    ========================= */
 
 const LS_KEY = "pbp_v46_state";
@@ -223,11 +228,9 @@ const diasNombres = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 /* =========================
    Persistencia
    ========================= */
-
 function saveState() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){}
 }
-
 function loadState() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -235,7 +238,6 @@ function loadState() {
     return JSON.parse(raw);
   } catch(e){ return null; }
 }
-
 function resetAll() {
   localStorage.removeItem(LS_KEY);
   location.reload();
@@ -244,9 +246,7 @@ function resetAll() {
 /* =========================
    UI Bind
    ========================= */
-
 function hydrateInputs() {
-  // Sesión
   document.getElementById('salonName').value = state.salonName || "";
   document.getElementById('salonZone').value = state.salonZone || "";
   document.getElementById('repName').value = state.repName || "";
@@ -255,7 +255,6 @@ function hydrateInputs() {
   document.getElementById('posBase').value = state.posBase || "net";
   document.getElementById('holidayPolicy').value = state.holidayPolicy || "only_dates";
 
-  // Inputs base
   const I = state.inputs || {};
   for (const k of Object.keys(I)) {
     const el = document.getElementById(k);
@@ -271,17 +270,19 @@ function attachListeners() {
     el.addEventListener('change', fn);
   };
 
-  // Sesión
   bind("salonName", () => { state.salonName = document.getElementById('salonName').value; saveState(); scheduleCalc(); });
   bind("salonZone", () => { state.salonZone = document.getElementById('salonZone').value; saveState(); scheduleCalc(); });
   bind("repName", () => { state.repName = document.getElementById('repName').value; saveState(); scheduleCalc(); });
-  bind("ocupacion", () => { state.ocupacion = clamp(parseFloat(document.getElementById('ocupacion').value)||0, 0, 120); saveState(); scheduleCalc(); });
+
+  bind("ocupacion", () => {
+    state.ocupacion = clamp(parseFloat(document.getElementById('ocupacion').value)||0, 0, 120);
+    saveState(); scheduleCalc();
+  });
 
   bind("mixPolicy", () => { state.mixPolicy = document.getElementById('mixPolicy').value; saveState(); scheduleCalc(); });
   bind("posBase", () => { state.posBase = document.getElementById('posBase').value; saveState(); scheduleCalc(); });
   bind("holidayPolicy", () => { state.holidayPolicy = document.getElementById('holidayPolicy').value; saveState(); scheduleCalc(); });
 
-  // Inputs numéricos principales
   const keys = ["year","weeks","puestos","servDia","tc","gFijos","sueldo","ftes","cargasSoc","iva","comision"];
   keys.forEach(k => bind(k, () => {
     const el = document.getElementById(k);
@@ -294,7 +295,6 @@ function attachListeners() {
 /* =========================
    Render Servicios + Días
    ========================= */
-
 function renderDays() {
   const dRow = document.getElementById('daysRow');
   dRow.innerHTML = diasNombres.map((name, i) => `
@@ -323,7 +323,7 @@ function renderServicios() {
   sList.innerHTML = '';
 
   state.servicios.forEach((s) => {
-    const costoKit = s.insumos.reduce((a, b) => a + (b.p > 0 ? b.pr * (b.u / b.p) : 0), 0);
+    const costoKit = (s.insumos||[]).reduce((a, b) => a + (b.p > 0 ? b.pr * (b.u / b.p) : 0), 0);
     const div = document.createElement('div');
     div.className = 'svc-card';
 
@@ -347,7 +347,7 @@ function renderServicios() {
       <table class="table-kit">
         <thead><tr><th>Insumo Proveedor</th><th>Pack (g/ml)</th><th>$ Precio</th><th>Uso (g/ml)</th><th></th></tr></thead>
         <tbody>
-          ${s.insumos.map((ins, idx) => `
+          ${(s.insumos||[]).map((ins, idx) => `
             <tr>
               <td><input type="text" value="${escapeAttr(ins.n)}" oninput="updateI('${s.id}',${idx},'n',this.value)"></td>
               <td><input type="number" value="${Number(ins.p)||0}" oninput="updateI('${s.id}',${idx},'p',this.value)"></td>
@@ -362,7 +362,6 @@ function renderServicios() {
       <button class="btn btn-add" style="font-size:10px;margin-top:10px;background:#374151;color:white;"
         onclick="addI('${s.id}')">+ Agregar Insumo</button>
     `;
-
     sList.appendChild(div);
   });
 }
@@ -376,59 +375,42 @@ function escapeAttr(s) {
 /* =========================
    CRUD Servicios
    ========================= */
-
 function addServicio() {
   state.servicios.push({ id: uid(), nombre: "Nuevo", peso: 0, ticket: 0, insumos: [] });
-  saveState();
-  renderServicios();
-  scheduleCalc();
+  saveState(); renderServicios(); scheduleCalc();
 }
-
 function removeServicio(id) {
   state.servicios = state.servicios.filter(x => x.id !== id);
-  saveState();
-  renderServicios();
-  scheduleCalc();
+  saveState(); renderServicios(); scheduleCalc();
 }
-
 function updateS(id, f, v) {
   const s = state.servicios.find(x => x.id === id);
   if (!s) return;
   s[f] = (f === 'nombre') ? v : (parseFloat(v) || 0);
-  saveState();
-  scheduleCalc();
+  saveState(); scheduleCalc();
 }
-
 function addI(id) {
   const s = state.servicios.find(x => x.id === id);
   if (!s) return;
   s.insumos.push({ n: "Item", p: 1, pr: 0, u: 0 });
-  saveState();
-  renderServicios();
-  scheduleCalc();
+  saveState(); renderServicios(); scheduleCalc();
 }
-
 function removeI(sId, iIdx) {
   const s = state.servicios.find(x => x.id === sId);
   if (!s) return;
   s.insumos.splice(iIdx, 1);
-  saveState();
-  renderServicios();
-  scheduleCalc();
+  saveState(); renderServicios(); scheduleCalc();
 }
-
 function updateI(sId, iIdx, f, v) {
   const s = state.servicios.find(x => x.id === sId);
   if (!s || !s.insumos[iIdx]) return;
   s.insumos[iIdx][f] = (f === 'n') ? v : (parseFloat(v) || 0);
-  saveState();
-  scheduleCalc();
+  saveState(); scheduleCalc();
 }
 
 /* =========================
-   Feriados UY (simple + móvil)
+   Feriados UY (práctico + móvil)
    ========================= */
-
 function easterDate(year) {
   const a=year%19, b=Math.floor(year/100), c=year%100, d=Math.floor(b/4), e=b%4;
   const g=Math.floor((8*b+13)/25), h=(19*a+b-d-g+15)%30, i=Math.floor(c/4), k=c%4;
@@ -436,15 +418,12 @@ function easterDate(year) {
   const mon=Math.floor((h+l-7*m+90)/25), day=(h+l-7*m+33*mon+19)%32;
   return new Date(year, mon-1, day);
 }
-
 function addDays(date, n) {
   const r = new Date(date);
   r.setDate(r.getDate() + n);
   return r;
 }
-
 function getHolidaysUY(year, policy) {
-  // Nota: esto es un set práctico para modelar "días cerrados", no legislación completa.
   const easter = easterDate(year);
 
   const fixed = [
@@ -471,11 +450,9 @@ function getHolidaysUY(year, policy) {
   let list = [...fixed, ...mobile];
 
   if (policy === "tourism_week") {
-    // Agrega Lun–Sáb de Turismo como “posible cierre” práctico
-    const mon = addDays(easter, -6); // Lunes de turismo (aprox: lunes de esa semana)
-    for (let i=0;i<6;i++) {
-      list.push({n:`Semana Turismo (día ${i+1})`, d:addDays(mon,i)});
-    }
+    // "Semana Turismo" práctica: Lun–Sáb de esa semana
+    const mon = addDays(easter, -6);
+    for (let i=0;i<6;i++) list.push({n:`Semana Turismo (día ${i+1})`, d:addDays(mon,i)});
   }
 
   return list;
@@ -484,7 +461,6 @@ function getHolidaysUY(year, policy) {
 /* =========================
    Cálculo (debounce + motor)
    ========================= */
-
 let raf = null;
 function scheduleCalc() {
   if (raf) cancelAnimationFrame(raf);
@@ -505,7 +481,6 @@ function normalizeWeightsIfNeeded(servs) {
 }
 
 function calculate() {
-  // Inputs
   const yr = parseInt(state.inputs.year) || 2026;
   const wks = parseFloat(state.inputs.weeks) || 0;
   const psts = parseFloat(state.inputs.puestos) || 0;
@@ -522,35 +497,27 @@ function calculate() {
 
   const ocup = clamp((parseFloat(state.ocupacion)||0)/100, 0, 1.2);
 
-  // Feriados (según política)
   const holPolicy = state.holidayPolicy || "only_dates";
   const holidays = (holPolicy === "none") ? [] : getHolidaysUY(yr, holPolicy);
 
-  // Offdays ponderados por configuración de días
   let offDays = 0;
   let feriadosAplicados = [];
   holidays.forEach(h => {
     const weight = state.configDias[h.d.getDay()] || 0;
-    if (weight > 0) {
-      offDays += weight;
-      feriadosAplicados.push(h.n);
-    }
+    if (weight > 0) { offDays += weight; feriadosAplicados.push(h.n); }
   });
 
-  // Días/año ponderados
   const diasBase = (state.configDias.reduce((a,b)=>a+b,0) * wks);
   const diasAnio = Math.max(0, diasBase - offDays);
 
-  const capServAnio = diasAnio * psts * sDia;      // capacidad teórica
-  const servAnio = capServAnio * ocup;             // capacidad usada (ocupación)
+  const capServAnio = diasAnio * psts * sDia; // capacidad teórica
+  const servAnio = capServAnio * ocup;        // capacidad usada (ocupación)
 
   document.getElementById('feriadosAviso').innerText =
     `Feriados que descuentan: ${feriadosAplicados.join(', ') || 'Ninguno'} · Días/año (base): ${diasBase.toFixed(1)} · Días/año (netos): ${diasAnio.toFixed(1)}`;
 
-  // Mix policy
-  const { sum:sumPeso, servs:servsForCalc, normalized } = normalizeWeightsIfNeeded(state.servicios);
+  const { sum:sumPeso, servs:servsForCalc } = normalizeWeightsIfNeeded(state.servicios);
 
-  // Aviso mix
   const mw = document.getElementById('mixWarning');
   if (state.servicios.length === 0) {
     mw.innerHTML = `<div class="danger">No hay servicios cargados. Agregá al menos 1 servicio para calcular.</div>`;
@@ -567,19 +534,17 @@ function calculate() {
     mw.innerHTML = `<div class="ok">Mix OK (100%).</div>`;
   }
 
-  // Motor de facturación/costos/sell-in
   let factBruta = 0, factNeta = 0, costoInsumosTotal = 0;
   let invGlobal = {};
   let labelsS = [], dataContrib = [];
 
-  // POS base
   let basePos = 0;
 
   servsForCalc.forEach(s => {
     const peso = Number(s.peso)||0;
     const cant = (capServAnio>0) ? (servAnio * (peso / 100)) : 0;
 
-    const costoK = (s.insumos||[]).reduce((a,b)=>a + (b.p>0 ? (b.pr * (b.u/b.p)) : 0), 0);
+    const costoK = (s.insumos||[]).reduce((a,b)=>a + (b.p>0 ? (b.pr*(b.u/b.p)) : 0), 0);
     const tBruto = Number(s.ticket)||0;
     const tNeto = (1+iva)>0 ? tBruto/(1+iva) : tBruto;
 
@@ -587,15 +552,12 @@ function calculate() {
     factNeta  += cant * tNeto;
     costoInsumosTotal += cant * costoK;
 
-    // contribución por servicio (variables: insumos + POS)
     const posUnit = (state.posBase==="gross") ? (tBruto*com) : (tNeto*com);
     labelsS.push(s.nombre || "Servicio");
     dataContrib.push(tNeto - costoK - posUnit);
 
-    // POS base agregado
     basePos += (state.posBase==="gross") ? (cant*tBruto) : (cant*tNeto);
 
-    // Sell-in por insumo
     (s.insumos||[]).forEach(i => {
       const name = i.n || "Item";
       if (!invGlobal[name]) invGlobal[name] = { u: 0, c: 0, pack: i.p || 0 };
@@ -609,18 +571,13 @@ function calculate() {
   const comPos = basePos * com;
   const labAnual = (su * fts * 12) * (1 + car);
   const fijoAnual = gF * 12;
-
   const resAnual = factNeta - costoInsumosTotal - comPos - labAnual - fijoAnual;
 
   const color = resAnual >= 0 ? 'pos' : 'neg';
 
-  // Resumen negocio
-  const kpiCap = capServAnio;
-  const kpiUse = servAnio;
-
   document.getElementById('resSummary').innerHTML = `
-    <div class="res-row"><span>Capacidad anual (teórica):</span><span class="val">${fmtUYU0(kpiCap)} serv</span></div>
-    <div class="res-row"><span>Capacidad usada (ocupación ${Math.round(ocup*100)}%):</span><span class="val">${fmtUYU0(kpiUse)} serv</span></div>
+    <div class="res-row"><span>Capacidad anual (teórica):</span><span class="val">${fmtUYU0(capServAnio)} serv</span></div>
+    <div class="res-row"><span>Capacidad usada (ocupación ${Math.round(ocup*100)}%):</span><span class="val">${fmtUYU0(servAnio)} serv</span></div>
     <div class="res-row"><span>Venta neta anual:</span><span class="val">UYU $${fmtUYU0(factNeta)}</span></div>
     <div class="res-row"><span>Venta bruta anual:</span><span class="val">UYU $${fmtUYU0(factBruta)}</span></div>
     <div class="res-row"><span>Insumos (costo total):</span><span class="val neg">UYU $${fmtUYU0(costoInsumosTotal)}</span></div>
@@ -631,19 +588,16 @@ function calculate() {
     <span class="val-big ${color}" style="font-size:18px;opacity:.8;">USD $${fmtUYU0(resAnual/tc)}</span>
   `;
 
-  // G3 — Potencial compra por FTE (lo que vos querés)
+  // G3 — Potencial compra por FTE
   const compraTotalUYU = costoInsumosTotal;
   const compraFTE_UYU = compraTotalUYU / fts;
   const compraFTE_USD = compraFTE_UYU / tc;
-
-  // Señal simple “G3-friendly”: compra por FTE / mes
   const compraFTE_Mes_UYU = compraFTE_UYU / 12;
   const compraFTE_Mes_USD = compraFTE_USD / 12;
 
-  // Diagnóstico rápido (para conversación)
   let g3Badge = "ok";
   let g3Msg = "Potencial calculado";
-  if (kpiUse <= 0 || compraTotalUYU <= 0) { g3Badge="danger"; g3Msg="Faltan datos o ocupación muy baja"; }
+  if (servAnio <= 0 || compraTotalUYU <= 0) { g3Badge="danger"; g3Msg="Faltan datos o ocupación muy baja"; }
   else if (resAnual < 0) { g3Badge="alert"; g3Msg="Compra potencial existe, pero el negocio no cierra (pérdida)"; }
 
   const badgeHtml = (g3Badge==="ok")
@@ -660,9 +614,7 @@ function calculate() {
     <div class="res-row"><span>Compra mensual por FTE:</span><span class="val">UYU $${fmtUYU0(compraFTE_Mes_UYU)} (USD $${fmtUYU0(compraFTE_Mes_USD)})</span></div>
   `;
 
-  // Compras (sell-in)
-  const porEstilistaUyu = compraTotalUYU / fts;
-
+  // Sell-in tabla
   const rowsInv = Object.keys(invGlobal)
     .sort((a,b)=>invGlobal[b].c - invGlobal[a].c)
     .map(k => `
@@ -674,43 +626,61 @@ function calculate() {
     `).join('');
 
   document.getElementById('resCompras').innerHTML = `
-    <div class="res-row"><span>Compra anual por Estilista (FTE):</span><span class="val">UYU $${fmtUYU0(porEstilistaUyu)}</span></div>
-    <div class="res-row"><span>Compra anual por Estilista (USD):</span><span class="val">USD $${fmtUYU0(porEstilistaUyu/tc)}</span></div>
+    <div class="res-row"><span>Compra anual por Estilista (FTE):</span><span class="val">UYU $${fmtUYU0(compraFTE_UYU)}</span></div>
+    <div class="res-row"><span>Compra anual por Estilista (USD):</span><span class="val">USD $${fmtUYU0(compraFTE_USD)}</span></div>
     <table class="table-compras">
       <thead><tr><th>Producto Proveedor</th><th>Unidades Anuales</th><th>Inversión Total</th></tr></thead>
       <tbody>${rowsInv || `<tr><td colspan="3" style="padding:12px;color:var(--muted);">Sin insumos cargados</td></tr>`}</tbody>
     </table>
   `;
 
-  // Break-even
-  const mUnit = (kpiUse > 0) ? (factNeta - costoInsumosTotal - comPos) / kpiUse : 0; // contribución promedio/servicio
-  const beMes = (mUnit > 0) ? (gF + (su * fts * (1+car))) / mUnit : 0;
+  // Break-even + NUEVO: servicios extra por FTE
+  const mUnit = (servAnio > 0) ? (factNeta - costoInsumosTotal - comPos) / servAnio : 0; // contribución promedio por servicio
+  const beMesTotal = (mUnit > 0) ? (gF + (su * fts * (1+car))) / mUnit : 0; // servicios/mes del salón para BE
+
+  const servMesActualTotal = servAnio / 12;
+  const servMesActualPorFTE = servMesActualTotal / fts;
+
+  const beMesPorFTE = (mUnit > 0) ? (beMesTotal / fts) : 0;
+
+  const diasMes = diasAnio / 12;
+  const extraServMesPorFTE = (mUnit > 0) ? Math.max(0, beMesPorFTE - servMesActualPorFTE) : 0;
+  const extraServDiaPorFTE = (diasMes > 0) ? (extraServMesPorFTE / diasMes) : 0;
 
   document.getElementById('resBE').innerHTML = `
-    <div class="res-row"><span>Punto de equilibrio:</span><span class="val ${mUnit>0?'pos':'neg'}">${mUnit>0 ? Math.ceil(beMes) : '—'} serv/mes</span></div>
+    <div class="res-row"><span>Punto de equilibrio (salón):</span><span class="val ${mUnit>0?'pos':'neg'}">${mUnit>0 ? Math.ceil(beMesTotal) : '—'} serv/mes</span></div>
+    <div class="res-row"><span>Actual (salón):</span><span class="val">${fmtUYU0(servMesActualTotal)} serv/mes</span></div>
+
+    <div class="res-row"><span>Punto de equilibrio (por FTE):</span><span class="val ${mUnit>0?'pos':'neg'}">${mUnit>0 ? Math.ceil(beMesPorFTE) : '—'} serv/mes/FTE</span></div>
+    <div class="res-row"><span>Actual (por FTE):</span><span class="val">${fmtUYU0(servMesActualPorFTE)} serv/mes/FTE</span></div>
+
+    <div class="res-row"><span><b>Faltan</b> (por FTE) para BE:</span>
+      <span class="val ${extraServMesPorFTE>0 ? 'warn' : 'pos'}">
+        ${mUnit>0 ? `${extraServMesPorFTE.toFixed(1)} serv/mes/FTE` : '—'}
+      </span>
+    </div>
+    <div class="res-row" style="border-bottom:none;"><span>Eso es aprox (por día/FTE):</span>
+      <span class="val ${extraServDiaPorFTE>0 ? 'warn' : 'pos'}">
+        ${mUnit>0 ? `${extraServDiaPorFTE.toFixed(2)} serv/día/FTE` : '—'}
+      </span>
+    </div>
+
     ${servsForCalc.map(s => `
       <div class="res-row" style="font-size:11px;border:none;">
         <span>${escapeAttr(s.nombre)} (${(Number(s.peso)||0).toFixed(1)}%):</span>
-        <span>${mUnit>0 ? Math.ceil(beMes * (Number(s.peso)||0) / 100) : '—'} serv</span>
+        <span>${mUnit>0 ? Math.ceil(beMesTotal * (Number(s.peso)||0) / 100) : '—'} serv</span>
       </div>
     `).join('')}
   `;
 
-  // Charts
   updateCharts(labelsS, dataContrib, costoInsumosTotal, comPos, fijoAnual, labAnual, resAnual);
 
-  // Guardar también servicios si se normaliza (opcional: NO tocamos el estado, normalizamos solo para calcular)
-  // Nota: si querés que la UI cambie los pesos al normalizar, lo hago, pero por ahora lo dejo solo para cálculo.
-
-  // Guardar snapshot mínimo
   saveState();
-
-  // Actualiza pill
-  document.getElementById('modePill').innerText = `Modo: Coaching + G3 · Compra/FTE (UYU/año): ${fmtUYU0(compraFTE_UYU)}`;
+  document.getElementById('modePill').innerText =
+    `Modo: Coaching + G3 · Compra/FTE (UYU/año): ${fmtUYU0(compraFTE_UYU)}`;
 }
 
 function updateCharts(labels, contrib, ins, com, fij, lab, res) {
-  // 1) Contribución por servicio (no "margen neto")
   const ctx1 = document.getElementById('marginChart').getContext('2d');
   if (mChart) mChart.destroy();
   mChart = new Chart(ctx1, {
@@ -726,20 +696,14 @@ function updateCharts(labels, contrib, ins, com, fij, lab, res) {
     }
   });
 
-  // 2) Distribución: muestra pérdida si res < 0
   const ctx2 = document.getElementById('distributionChart').getContext('2d');
   if (dChart) dChart.destroy();
 
   const labelsD = ['Insumos','POS','Local','Personal'];
   const dataD = [ins, com, fij, lab];
 
-  if (res >= 0) {
-    labelsD.push('Beneficio');
-    dataD.push(res);
-  } else {
-    labelsD.push('Pérdida');
-    dataD.push(Math.abs(res));
-  }
+  if (res >= 0) { labelsD.push('Beneficio'); dataD.push(res); }
+  else { labelsD.push('Pérdida'); dataD.push(Math.abs(res)); }
 
   dChart = new Chart(ctx2, {
     type:'doughnut',
@@ -758,7 +722,6 @@ function updateCharts(labels, contrib, ins, com, fij, lab, res) {
 /* =========================
    Export G3 (CSV + JSON)
    ========================= */
-
 function buildG3Payload() {
   const yr = parseInt(state.inputs.year) || 2026;
   const wks = parseFloat(state.inputs.weeks) || 0;
@@ -776,7 +739,6 @@ function buildG3Payload() {
 
   const ocup = clamp((parseFloat(state.ocupacion)||0)/100, 0, 1.2);
 
-  // Recalcular rápido usando la misma lógica (sin charts)
   const holPolicy = state.holidayPolicy || "only_dates";
   const holidays = (holPolicy === "none") ? [] : getHolidaysUY(yr, holPolicy);
 
@@ -870,7 +832,6 @@ function copyJSON() {
 
 function exportCSV() {
   const p = buildG3Payload();
-  // CSV de 1 fila (G3 facts)
   const row = {
     timestamp: p.meta.timestamp,
     salonName: p.meta.salonName,
@@ -930,16 +891,15 @@ function flashPill(msg) {
 /* =========================
    Init
    ========================= */
-
 function renderAll() {
   hydrateInputs();
   renderDays();
   renderServicios();
 }
-
 renderAll();
 attachListeners();
 scheduleCalc();
 </script>
 </body>
 </html>
+
